@@ -14,8 +14,8 @@
   <img src="https://raw.githubusercontent.com/milinddethe15/milinddethe15/output/github-contribution-grid-snake-dark.svg#gh-dark-mode-only" />
 </p>
 
-## Tech stack
-<!-- I work with:<br/>
+<!-- ## Tech stack
+ I work with:<br/>
 [![Bash, C, CPP, CMake, Docker, Express, Git, Markdown, Github, Gitlab, GO, Linux, MySQL, Java, Jenkins, Lua, Mongodb, Nodejs, Vue, Vim, Visualstudio, Python, Redis, Stackoverflow](https://skillicons.dev/icons?i=bash,c,cpp,cmake,docker,express,git,md,github,gitlab,go,linux,mysql,java,jenkins,lua,mongodb,nodejs,vue,vim,visualstudio,py,redis,stackoverflow&perline=8)](https://skillicons.dev)
  -->
 
