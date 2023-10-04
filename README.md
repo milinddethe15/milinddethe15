@@ -9,7 +9,7 @@
   <!-- <a href="https://jq.qq.com/?_wv=1027&k=4ADDSev"><img src="https://img.shields.io/badge/-331230369-f48225?style=flat&logo=tencentqq&logoColor=white" /></a> -->
   <a href="https://github.com/milinddethe15"><img src="https://img.shields.io/badge/-milinddethe15-3a3a3a?style=flat&logo=GitHub&logoColor=white" /></a>
 </p>
-
+<!--
 <p align="cengter">
   <img src="https://raw.githubusercontent.com/milinddethe15/milinddethe15/output/github-contribution-grid-snake-dark.svg#gh-dark-mode-only" />
 </p>
