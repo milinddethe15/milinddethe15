@@ -3,9 +3,9 @@
 	<br>
 </div>
 <p align="center">
-  <a href="https://twitter.com/milinddethe15"><img src="https://img.shields.io/badge/-@milinddethe15-00acee?style=flat&logo=Twitter&logoColor=white"/></a>
+  <a href="https://twitter.com/milinddethe15"><img src="https://img.shields.io/badge/milinddethe15-191919?style=flat&logo=X&logoColor=white"/></a>
   <a href="https://github.com/milinddethe15"><img src="https://img.shields.io/badge/milinddethe15-3a3a3a?style=flat&logo=GitHub&logoColor=white" /></a>
-  <a href="https://www.linkedin.com/in/milind-dethe"><img src="https://img.shields.io/badge/LinkedIn-blue?style=flat&logoColor=white" /></a>
+  <a href="https://www.linkedin.com/in/milind-dethe"><img src="https://img.shields.io/badge/LinkedIn-blue?style=flat&logo=linkedin&logoColor=white" /></a>
 </p>
 
 <p align="cengter">
@@ -13,7 +13,7 @@
 </p>
 
 ## Tech stack
- I work with:<br/>
+
 [![GO, Python,Linux, C, CPP, Kubernetes, Docker, Express, Git, Markdown, Github, Jenkins, Mongodb, Nodejs, django ,Vue, Vim, Visualstudio, Redis, Stackoverflow](https://skillicons.dev/icons?i=go,py,linux,c,cpp,kubernetes,docker,express,git,markdown,github,jenkins,mongodb,nodejs,django,vue,vim,visualstudio,redis,stackoverflow&perline=10)](https://skillicons.dev)
 
 
