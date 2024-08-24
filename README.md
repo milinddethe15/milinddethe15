@@ -3,7 +3,7 @@
 	<br>
 </div>
 <p align="center">
-  <a href="https://twitter.com/milinddethe15"><img src="https://img.shields.io/badge/X-blue?style=flat&logo=Twitter&logoColor=white"/></a>
+  <a href="https://twitter.com/milinddethe15"><img src="https://img.shields.io/badge/~@milinddethe15-00acee?style=flat&logo=Twitter&logoColor=white"/></a>
   <a href="https://github.com/milinddethe15"><img src="https://img.shields.io/badge/milinddethe15-3a3a3a?style=flat&logo=GitHub&logoColor=white" /></a>
   <a href="https://www.linkedin.com/in/milind-dethe"><img src="https://img.shields.io/badge/LinkedIn-blue?style=flat&logoColor=white" /></a>
 </p>
