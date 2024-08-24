@@ -13,9 +13,12 @@
 <p align="cengter">
   <img src="https://raw.githubusercontent.com/milinddethe15/milinddethe15/output/github-contribution-grid-snake-dark.svg#gh-dark-mode-only" />
 </p>
+
 ## Tech stack
  I work with:<br/>
 [![GO, Python,Linux, C, CPP, Kubernetes, Docker, Express, Git, Markdown, Github, Jenkins, Mongodb, Nodejs, django ,Vue, Vim, Visualstudio, Redis, Stackoverflow](https://skillicons.dev/icons?i=go,py,linux,c,cpp,kubernetes,docker,express,git,markdown,github,jenkins,mongodb,nodejs,django,vue,vim,visualstudio,redis,stackoverflow&perline=10)](https://skillicons.dev)
+
+
 ###
 <img align="left" src="https://komarev.com/ghpvc/?username=milinddethe15&style=flat" />
 
