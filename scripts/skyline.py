@@ -11,9 +11,10 @@ were; busier days step in as they rise, and the busiest day carries a mast.
     python3 scripts/skyline.py            # rewrites the model inside README.md
 
 The model is an ASCII STL in a fenced `stl` block, which GitHub draws as a 3D
-viewer that anyone can drag around. The viewer shows one flat colour, so the
-shapes have to do all the work: kerbs mark out the empty lots, and the towers
-are told apart only by their outline.
+viewer that anyone can drag around. The viewer shows one flat colour with
+barely any shading, so outlines have to do all the work. There is no ground
+under the city for that reason: the viewer lays its own pale grid beneath the
+model, and against it the kerbs draw the empty lots and each tower stands clear.
 
 The token comes from GITHUB_TOKEN or GH_TOKEN, or from the gh CLI if neither is set.
 """
@@ -33,12 +34,11 @@ LOT = 10  # one day's plot of land; everything else is measured against this
 AVENUE = 10  # the road between one block and the next
 GAP = 1  # the strip left clear on each side of a tower, which makes the streets
 STEP = 1  # how far each tier steps in from the one below
-FLOOR, RISE = 3, 8  # a tower is FLOOR + RISE * sqrt(contributions) tall, so one huge day can't flatten the rest
+FLOOR, RISE = 4, 12  # a tower is FLOOR + RISE * sqrt(contributions) tall, so one huge day can't flatten the rest
 TIERS = (4, 10)  # contributions in a day at which a tower gains a second and a third tier
 SPLITS = {1: (1,), 2: (0.7, 1), 3: (0.5, 0.82, 1)}  # where each tier stops, as a share of the full height
 MAST = 9  # the mast on the busiest day
 KERB_WIDTH, KERB_HEIGHT = 1, 0.6
-SLAB, APRON = 3, 4  # the ground: how thick, and how far it reaches past the lots
 
 START, END = "<!-- skyline:start -->", "<!-- skyline:end -->"
 QUERY = ("query($login:String!){user(login:$login){contributionsCollection{contributionCalendar"
@@ -70,7 +70,7 @@ def calendar(user):
 def box(x0, y0, x1, y1, z0, z1, bottom=False):
     """The faces of a box as (normal, three corners), wound anticlockwise seen from outside.
 
-    The underside is left off unless asked for: everything here stands on something.
+    The underside is left off unless asked for: only what touches the ground can be seen from below.
     """
     c = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
     faces = [((0, 0, 1), (4, 5, 6, 7)), ((0, -1, 0), (0, 1, 5, 4)), ((1, 0, 0), (1, 2, 6, 5)),
@@ -90,7 +90,7 @@ def tower(x, y, count, mast):
     for k, split in enumerate(SPLITS[tiers]):
         inset = GAP + k * STEP
         top = round(height * split, 1)
-        yield from box(x + inset, y + inset, x + LOT - inset, y + LOT - inset, bottom, top)
+        yield from box(x + inset, y + inset, x + LOT - inset, y + LOT - inset, bottom, top, bottom=k == 0)
         bottom = top
     if mast:
         yield from box(x + LOT / 2 - 0.5, y + LOT / 2 - 0.5, x + LOT / 2 + 0.5, y + LOT / 2 + 0.5, bottom, bottom + MAST)
@@ -100,11 +100,10 @@ def render(weeks):
     """The whole city as ASCII STL, standing on z = 0 with the weeks running along x."""
     columns = math.ceil(len(weeks) / BLOCKS)
     width, pitch = columns * LOT, 7 * LOT + AVENUE
-    depth = BLOCKS * pitch - AVENUE
     peak = max(count for week in weeks for _, count in week)
     half = KERB_WIDTH / 2
 
-    mesh = list(box(-APRON, -APRON, width + APRON, depth + APRON, -SLAB, 0, bottom=True))
+    mesh = []
     for block in range(BLOCKS):
         front = block * pitch
         for k in range(columns + 1):
