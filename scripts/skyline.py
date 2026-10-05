@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Build the contribution skyline: the last year of GitHub contributions as a small city.
 
-Every day is a lot on a 53 by 7 grid, one column per week with Sunday at the
-back, the same way round as the chart on the profile. A day with contributions
-gets a tower, taller the more there were; busier days step in as they rise, and
-the busiest day of the year carries a mast.
+Every day is a lot, one column per week with Sunday at the back, the same way
+round as the chart on the profile. The chart is folded into three blocks with
+an avenue between them, oldest at the back and this week at the front right,
+because GitHub's viewer frames a square and a strip 53 lots long would be a
+sliver in it. A day with contributions gets a tower, taller the more there
+were; busier days step in as they rise, and the busiest day carries a mast.
 
     python3 scripts/skyline.py            # rewrites the model inside README.md
 
@@ -26,7 +28,9 @@ import subprocess
 import urllib.request
 
 USER = "milinddethe15"
+BLOCKS = 3  # the year is folded into this many rows of weeks
 LOT = 10  # one day's plot of land; everything else is measured against this
+AVENUE = 10  # the road between one block and the next
 GAP = 1  # the strip left clear on each side of a tower, which makes the streets
 STEP = 1  # how far each tier steps in from the one below
 FLOOR, RISE = 3, 8  # a tower is FLOOR + RISE * sqrt(contributions) tall, so one huge day can't flatten the rest
@@ -94,20 +98,25 @@ def tower(x, y, count, mast):
 
 def render(weeks):
     """The whole city as ASCII STL, standing on z = 0 with the weeks running along x."""
-    width, depth = len(weeks) * LOT, 7 * LOT
+    columns = math.ceil(len(weeks) / BLOCKS)
+    width, pitch = columns * LOT, 7 * LOT + AVENUE
+    depth = BLOCKS * pitch - AVENUE
     peak = max(count for week in weeks for _, count in week)
     half = KERB_WIDTH / 2
 
     mesh = list(box(-APRON, -APRON, width + APRON, depth + APRON, -SLAB, 0, bottom=True))
-    for k in range(len(weeks) + 1):
-        mesh += box(k * LOT - half, -half, k * LOT + half, depth + half, 0, KERB_HEIGHT)
-    for k in range(8):
-        mesh += box(-half, k * LOT - half, width + half, k * LOT + half, 0, KERB_HEIGHT)
+    for block in range(BLOCKS):
+        front = block * pitch
+        for k in range(columns + 1):
+            mesh += box(k * LOT - half, front - half, k * LOT + half, front + 7 * LOT + half, 0, KERB_HEIGHT)
+        for k in range(8):
+            mesh += box(-half, front + k * LOT - half, width + half, front + k * LOT + half, 0, KERB_HEIGHT)
     crowned = False
-    for column, week in enumerate(weeks):
+    for index, week in enumerate(weeks):
+        front = (BLOCKS - 1 - index // columns) * pitch
         for weekday, count in week:
             if count:
-                mesh += tower(column * LOT, (6 - weekday) * LOT, count, count == peak and not crowned)
+                mesh += tower(index % columns * LOT, front + (6 - weekday) * LOT, count, count == peak and not crowned)
                 crowned = crowned or count == peak
 
     point = lambda p: " ".join(num(v) for v in p)
