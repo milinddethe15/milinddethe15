@@ -1,136 +1,122 @@
 #!/usr/bin/env python3
-"""Build the contribution skyline: the last year of GitHub contributions as a small city.
+"""Build the contribution chart as a 3D model that anyone can drag around in the README.
 
-Every day is a lot, one column per week with Sunday at the back, the same way
-round as the chart on the profile. The chart is folded into three blocks with
-an avenue between them, oldest at the back and this week at the front right,
-because GitHub's viewer frames a square and a strip 53 lots long would be a
-sliver in it. A day with contributions gets a tower, taller the more there
-were; busier days step in as they rise, and the busiest day carries a mast.
+It is the chart scripts/contributions.py draws, laid out the same way: one column
+per week with Sunday at the back, a bar for every day with contributions, the
+month names along the front and Mon, Wed and Fri down the left.
 
     python3 scripts/skyline.py            # rewrites the model inside README.md
 
-The model is an ASCII STL in a fenced `stl` block, which GitHub draws as a 3D
-viewer that anyone can drag around. The viewer shows one flat colour with
-barely any shading, so outlines have to do all the work. There is no ground
-under the city for that reason: the viewer lays its own pale grid beneath the
-model, and against it the kerbs draw the empty lots and each tower stands clear.
-
-The token comes from GITHUB_TOKEN or GH_TOKEN, or from the gh CLI if neither is set.
+The model is an ASCII STL in a fenced `stl` block, which GitHub shows in a viewer
+of its own. That viewer has one flat colour with barely any shading, and lays a
+pale grid under the model, so the greens are gone and outlines do all the work:
+an empty day is a flat square just above the grid, and the names are flat strokes
+of the same kind, a few straight lines to a letter.
 """
 
 import argparse
-import json
+import calendar
 import math
-import os
 import pathlib
 import re
-import subprocess
-import urllib.request
 
-USER = "milinddethe15"
-BLOCKS = 3  # the year is folded into this many rows of weeks
-LOT = 10  # one day's plot of land; everything else is measured against this
-AVENUE = 10  # the road between one block and the next
-GAP = 1  # the strip left clear on each side of a tower, which makes the streets
-STEP = 1  # how far each tier steps in from the one below
-FLOOR, RISE = 4, 12  # a tower is FLOOR + RISE * sqrt(contributions) tall, so one huge day can't flatten the rest
-TIERS = (4, 10)  # contributions in a day at which a tower gains a second and a third tier
-SPLITS = {1: (1,), 2: (0.7, 1), 3: (0.5, 0.82, 1)}  # where each tier stops, as a share of the full height
-MAST = 9  # the mast on the busiest day
-KERB_WIDTH, KERB_HEIGHT = 1, 0.6
+import contributions as chart
 
+FLOAT = 0.4  # how far the flat parts sit above the viewer's grid, so the two don't flicker
+LETTER = 5.2  # how tall the names are, against a day's square of 10
+STROKE = 0.14  # how thick a letter's lines are, as a share of its height
 START, END = "<!-- skyline:start -->", "<!-- skyline:end -->"
-QUERY = ("query($login:String!){user(login:$login){contributionsCollection{contributionCalendar"
-         "{weeks{contributionDays{contributionCount weekday}}}}}}")
+
+# Capital letters as strokes on a grid 4 wide and 6 tall, each stroke a run of straight lines.
+STROKES = {
+    "A": [[(0, 0), (0, 4), (2, 6), (4, 4), (4, 0)], [(0, 2.4), (4, 2.4)]],
+    "B": [[(0, 0), (0, 6), (3, 6), (4, 5), (4, 4), (3, 3), (0, 3)], [(3, 3), (4, 2), (4, 1), (3, 0), (0, 0)]],
+    "C": [[(4, 5), (3, 6), (1, 6), (0, 5), (0, 1), (1, 0), (3, 0), (4, 1)]],
+    "D": [[(0, 0), (0, 6), (2.5, 6), (4, 4.5), (4, 1.5), (2.5, 0), (0, 0)]],
+    "E": [[(4, 6), (0, 6), (0, 0), (4, 0)], [(0, 3), (3, 3)]],
+    "F": [[(4, 6), (0, 6), (0, 0)], [(0, 3), (3, 3)]],
+    "G": [[(4, 5), (3, 6), (1, 6), (0, 5), (0, 1), (1, 0), (3, 0), (4, 1), (4, 3), (2.2, 3)]],
+    "I": [[(1, 0), (3, 0)], [(2, 0), (2, 6)], [(1, 6), (3, 6)]],
+    "J": [[(0, 1.2), (1, 0), (3, 0), (4, 1), (4, 6)]],
+    "L": [[(0, 6), (0, 0), (4, 0)]],
+    "M": [[(0, 0), (0, 6), (2, 3), (4, 6), (4, 0)]],
+    "N": [[(0, 0), (0, 6), (4, 0), (4, 6)]],
+    "O": [[(1, 0), (0, 1), (0, 5), (1, 6), (3, 6), (4, 5), (4, 1), (3, 0), (1, 0)]],
+    "P": [[(0, 0), (0, 6), (3, 6), (4, 5), (4, 4), (3, 3), (0, 3)]],
+    "R": [[(0, 0), (0, 6), (3, 6), (4, 5), (4, 4), (3, 3), (0, 3)], [(2, 3), (4, 0)]],
+    "S": [[(4, 5), (3, 6), (1, 6), (0, 5), (0, 4), (1, 3), (3, 3), (4, 2), (4, 1), (3, 0), (1, 0), (0, 1)]],
+    "T": [[(0, 6), (4, 6)], [(2, 6), (2, 0)]],
+    "U": [[(0, 6), (0, 1), (1, 0), (3, 0), (4, 1), (4, 6)]],
+    "V": [[(0, 6), (2, 0), (4, 6)]],
+    "W": [[(0, 6), (1, 0), (2, 4), (3, 0), (4, 6)]],
+    "Y": [[(0, 6), (2, 3), (4, 6)], [(2, 3), (2, 0)]],
+}
+ADVANCE = 5.5  # from the start of one letter to the start of the next, on the same grid
 
 
 def num(x):
     return f"{x:.2f}".rstrip("0").rstrip(".")
 
 
-def calendar(user):
-    """The year as a list of weeks, each a list of (weekday, contributions) with Sunday as 0."""
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if not token:
-        token = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=True).stdout.strip()
-    request = urllib.request.Request(
-        "https://api.github.com/graphql",
-        data=json.dumps({"query": QUERY, "variables": {"login": user}}).encode(),
-        headers={"Authorization": f"bearer {token}", "User-Agent": "skyline"},
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        reply = json.load(response)
-    if reply.get("errors"):
-        raise SystemExit(f"GitHub refused the query: {reply['errors'][0]['message']}")
-    weeks = reply["data"]["user"]["contributionsCollection"]["contributionCalendar"]["weeks"]
-    return [[(day["weekday"], day["contributionCount"]) for day in week["contributionDays"]] for week in weeks]
-
-
-def box(x0, y0, x1, y1, z0, z1, bottom=False):
-    """The faces of a box as (normal, three corners), wound anticlockwise seen from outside.
-
-    The underside is left off unless asked for: only what touches the ground can be seen from below.
-    """
+def box(x0, y0, x1, y1, z0, z1):
+    """All six faces of a box as (normal, three corners), wound anticlockwise seen from outside."""
     c = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
     faces = [((0, 0, 1), (4, 5, 6, 7)), ((0, -1, 0), (0, 1, 5, 4)), ((1, 0, 0), (1, 2, 6, 5)),
-             ((0, 1, 0), (2, 3, 7, 6)), ((-1, 0, 0), (3, 0, 4, 7))]
-    if bottom:
-        faces.append(((0, 0, -1), (3, 2, 1, 0)))
+             ((0, 1, 0), (2, 3, 7, 6)), ((-1, 0, 0), (3, 0, 4, 7)), ((0, 0, -1), (3, 2, 1, 0))]
     for normal, (p, q, r, s) in faces:
         yield normal, (c[p], c[q], c[r])
         yield normal, (c[p], c[r], c[s])
 
 
-def tower(x, y, count, mast):
-    """One day's building on the lot whose near left corner is (x, y)."""
-    height = FLOOR + RISE * math.sqrt(count)
-    tiers = 1 + sum(count >= t for t in TIERS)
-    bottom = 0
-    for k, split in enumerate(SPLITS[tiers]):
-        inset = GAP + k * STEP
-        top = round(height * split, 1)
-        yield from box(x + inset, y + inset, x + LOT - inset, y + LOT - inset, bottom, top, bottom=k == 0)
-        bottom = top
-    if mast:
-        yield from box(x + LOT / 2 - 0.5, y + LOT / 2 - 0.5, x + LOT / 2 + 0.5, y + LOT / 2 + 0.5, bottom, bottom + MAST)
+def patch(corners):
+    """A flat four-cornered piece facing up, floating just above the grid. The corners go round anticlockwise seen from above."""
+    p, q, r, s = ((x, y, FLOAT) for x, y in corners)
+    yield (0, 0, 1), (p, q, r)
+    yield (0, 0, 1), (p, r, s)
+
+
+def lettering(word, x, y, right=False):
+    """A word as flat strokes, its baseline starting at (x, y), or ending there if `right`."""
+    size, half = LETTER / 6, LETTER * STROKE / 2
+    if right:
+        x -= ((len(word) - 1) * ADVANCE + 4) * size
+    for place, letter in enumerate(word.upper()):
+        for stroke in STROKES[letter]:
+            points = [(x + (place * ADVANCE + px) * size, y + py * size) for px, py in stroke]
+            for (ax, ay), (bx, by) in zip(points, points[1:]):
+                length = math.hypot(bx - ax, by - ay)
+                dx, dy = (bx - ax) / length * half, (by - ay) / length * half  # half a stroke's width along the line; (-dy, dx) is the same across it
+                yield from patch([(ax - dx + dy, ay - dy - dx), (bx + dx + dy, by + dy - dx), (bx + dx - dy, by + dy + dx), (ax - dx - dy, ay - dy + dx)])
 
 
 def render(weeks):
-    """The whole city as ASCII STL, standing on z = 0 with the weeks running along x."""
-    columns = math.ceil(len(weeks) / BLOCKS)
-    width, pitch = columns * LOT, 7 * LOT + AVENUE
-    peak = max(count for week in weeks for _, count in week)
-    half = KERB_WIDTH / 2
-
+    """The whole chart as ASCII STL, standing on z = 0 with the weeks running along x and Sunday at the back."""
+    cell, gap = chart.CELL, chart.GAP
+    peak = max(count for week in weeks for _, _, count, _ in week) or 1
     mesh = []
-    for block in range(BLOCKS):
-        front = block * pitch
-        for k in range(columns + 1):
-            mesh += box(k * LOT - half, front - half, k * LOT + half, front + 7 * LOT + half, 0, KERB_HEIGHT)
-        for k in range(8):
-            mesh += box(-half, front + k * LOT - half, width + half, front + k * LOT + half, 0, KERB_HEIGHT)
-    crowned = False
-    for index, week in enumerate(weeks):
-        front = (BLOCKS - 1 - index // columns) * pitch
-        for weekday, count in week:
-            if count:
-                mesh += tower(index % columns * LOT, front + (6 - weekday) * LOT, count, count == peak and not crowned)
-                crowned = crowned or count == peak
+    for column, week in enumerate(weeks):
+        for _, weekday, count, _ in week:
+            x0, y0 = column * cell + gap, (6 - weekday) * cell + gap
+            x1, y1 = x0 + cell - 2 * gap, y0 + cell - 2 * gap
+            mesh += box(x0, y0, x1, y1, 0, chart.height(count, peak)) if count else patch([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+    for column, name in chart.months(weeks):
+        mesh += lettering(name, column * cell + gap, -3 - LETTER)
+    for weekday in (1, 3, 5):
+        mesh += lettering(calendar.day_abbr[weekday - 1], -3, (6 - weekday + 0.5) * cell - LETTER / 2, right=True)
 
     point = lambda p: " ".join(num(v) for v in p)
     facets = "".join(f"facet normal {point(normal)}\nouter loop\n" + "".join(f"vertex {point(p)}\n" for p in corners) + "endloop\nendfacet\n"
                      for normal, corners in mesh)
-    return f"solid skyline\n{facets}endsolid skyline\n", len(mesh)
+    return f"solid contributions\n{facets}endsolid contributions\n", len(mesh)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--user", default=USER, help="whose contributions to build")
+    ap.add_argument("--user", default=chart.USER, help="whose contributions to build")
     ap.add_argument("--stl", help="write a standalone .stl file here and leave the README alone")
     args = ap.parse_args()
 
-    model, triangles = render(calendar(args.user))
+    model, triangles = render(chart.contributions(args.user))
     if args.stl:
         path = pathlib.Path(args.stl)
         path.write_text(model)

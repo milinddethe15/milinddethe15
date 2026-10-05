@@ -100,6 +100,11 @@ def months(weeks):
     return [(column, name) for (column, name), (after, _) in zip(starts, starts[1:] + [(len(weeks) + 3, "")]) if after - column >= 3]
 
 
+def height(count, peak):
+    """How tall the bar is for a day with `count` contributions, when the busiest day had `peak`."""
+    return LOW + (HIGH - LOW) * math.sqrt(count / peak)
+
+
 def angle_at(time):
     return FACING + SWING * math.sin(2 * math.pi * time / SWAY)
 
@@ -133,7 +138,6 @@ def box(x0, y0, x1, y1, z0, z1, top, front, end):
 
 def render(weeks, at_time=None):
     peak = max(count for week in weeks for _, _, count, _ in week) or 1
-    height = lambda count: LOW + (HIGH - LOW) * math.sqrt(count / peak)
     x0, y0 = -EDGE["left"], -EDGE["back"]
     x1, y1 = len(weeks) * CELL + EDGE["right"], 7 * CELL + EDGE["front"]
 
@@ -142,7 +146,7 @@ def render(weeks, at_time=None):
         for _, weekday, count, level in week:
             x, y = column * CELL + GAP, weekday * CELL + GAP
             if count:
-                bars += box(x, y, x + CELL - 2 * GAP, y + CELL - 2 * GAP, 0, height(count), GREENS[level],
+                bars += box(x, y, x + CELL - 2 * GAP, y + CELL - 2 * GAP, 0, height(count, peak), GREENS[level],
                             mix(GREENS[level], "#000000", SHADE["front"]), mix(GREENS[level], "#000000", SHADE["end"]))
             else:
                 flat += f"M{num(x)} {num(y)}h{num(CELL - 2 * GAP)}v{num(CELL - 2 * GAP)}h{num(2 * GAP - CELL)}z"
