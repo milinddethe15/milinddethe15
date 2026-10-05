@@ -7,18 +7,30 @@ bends the light from the far side of the disk up over the top of the hole and
 under the bottom, which is what gives the picture its halo. The side of the
 disk moving towards the viewer is brighter than the side moving away.
 
+Behind the hole hangs the past year of GitHub contributions, drawn as GitHub
+draws it: a square for each day, a column for each week, greener for busier
+days. The year is split into two halves, one above the disk and one below. The
+hole bends the picture of the squares nearest to it into arcs, and one after
+another those squares let go, are drawn out into streaks and spiral in; each
+grows back a little later, so the chart is forever being eaten.
+
     python3 scripts/hero.py            # writes assets/hero.svg
+    python3 scripts/hero.py --fetch    # first refreshes scripts/year.json (needs GITHUB_TOKEN)
 
 The SVG is a static file animated with CSS only (no scripts, no network, no
-filters), so nothing has to run on a schedule. Every streak of gas is a dashed
-ellipse whose dashes slide round at its own orbital speed, faster near the
-hole; each pattern repeats exactly, so the motion never jumps.
+filters). Every streak of gas is a dashed ellipse whose dashes slide round at
+its own orbital speed, faster near the hole; each pattern repeats exactly, so
+the motion never jumps.
 """
 
 import argparse
+import datetime
+import json
 import math
+import os
 import pathlib
 import random
+import urllib.request
 
 W, H = 960, 540  # 16:9
 R = 84  # radius of the shadow; everything else is measured in these
@@ -28,10 +40,23 @@ ORBIT = 3.4  # seconds for gas at radius 1 to go round once; further out is slow
 STAR_RINGS = 9  # the sky turns in this many rings
 STAR_ORBIT = 26  # seconds for a star at radius 1 to circle the hole; further out is much slower
 STAR_DENSITY = 0.00042  # stars per square pixel
+PITCH, TILE, ROUND = 27, 22, 4  # the chart: distance between squares, their size, how rounded their corners are
+TOP_WEEKS = 27  # weeks in the half of the year above the disk; the rest go below
+BAND_GAP = 96  # the space between the two halves, where the disk lies
+LENS, LENS_REACH = 150, 200  # how far out the hole pushes the picture of what is right behind it, and how soon that fades
+CAPTURE = 330  # squares whose picture is nearer than this fall in
+FALL = 8  # seconds a square takes to spiral in once it lets go
+SWIRL = 450  # degrees it turns on the way
+REST = ((185, 14), (230, 22), (280, 36), (CAPTURE, 60))  # (distance, seconds from one fall to the next): nearer squares fall more often
+GREENS = ("#0e4429", "#006d32", "#26a641", "#39d353")  # GitHub's four shades, quietest first
 SEED = 3
+
+USER = "milinddethe15"
+DATA = pathlib.Path(__file__).resolve().parent / "year.json"
 
 # Gas colour from the side rushing towards the viewer (left) to the side receding (right).
 HOT = ("#fffaf0", "#ffe3ad", "#ffb65c", "#f07a1f", "#a3360b")
+SKY = "#150d22"  # the faint tint of the sky behind the hole
 BACKGROUND = "#03040a"
 
 
@@ -53,6 +78,19 @@ def streak(rng, rx, ry, cy, width, opacity, period, broad=False):
     return (f'<ellipse{' class="b"' if broad else ""} cy="{num(cy)}" rx="{num(rx)}" ry="{num(ry)}" pathLength="100" stroke-width="{num(width)}" '
             f'stroke-opacity="{num(opacity)}" stroke-dasharray="{pattern}" '
             f'style="animation-duration:{num(period)}s;animation-delay:{num(-rng.uniform(0, period))}s"/>')
+
+
+def fetch():
+    """Save the past year of contributions as {"from": first day, "levels": a digit 0-4 for each day}."""
+    query = "{user(login:\"%s\"){contributionsCollection{contributionCalendar{weeks{contributionDays{date contributionLevel}}}}}}" % USER
+    token = os.environ.get("GITHUB_TOKEN") or os.environ["GH_TOKEN"]
+    request = urllib.request.Request("https://api.github.com/graphql", json.dumps({"query": query}).encode(),
+                                     {"Authorization": f"bearer {token}"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        weeks = json.load(response)["data"]["user"]["contributionsCollection"]["contributionCalendar"]["weeks"]
+    days = [day for week in weeks for day in week["contributionDays"]]
+    scale = ("NONE", "FIRST_QUARTILE", "SECOND_QUARTILE", "THIRD_QUARTILE", "FOURTH_QUARTILE")
+    DATA.write_text(json.dumps({"from": days[0]["date"], "levels": "".join(str(scale.index(day["contributionLevel"])) for day in days)}) + "\n")
 
 
 def stars(rng, shift):
@@ -78,11 +116,94 @@ def stars(rng, shift):
     return "".join(out)
 
 
+def lens(x, y):
+    """Where a point behind the hole appears to be: pushed outwards, so nothing shows inside a ring around the hole."""
+    r = math.hypot(x, y) or 1e-9
+    k = math.sqrt(r * r + LENS ** 2 * math.exp(-(r / LENS_REACH) ** 2)) / r
+    return x * k, y * k
+
+
+def falls():
+    """Keyframes for a square's life, one set for each resting time: let go, spiral in, stay away a moment, grow back, rest.
+
+    A square is drawn lying on the x axis of its own turned frame, so squeezing x carries it to the hole
+    and thins it, while stretching y draws it out along its path.
+    """
+    out = []
+    for n, (_, cycle) in enumerate(REST):
+        frames = ["0%{transform:rotate(0deg) scale(1,1);opacity:1}"]
+        for k in range(1, 21):
+            u = k / 20
+            look = ";opacity:1" if k == 19 else ";opacity:0" if k == 20 else ""
+            frames.append(f"{100 * FALL * u / cycle:.3f}%{{transform:rotate({num(-SWIRL * u ** 2.5)}deg) "
+                          f"scale({num(1 - u ** 2.2)},{num((1 + 1.6 * u ** 1.5) * (1 - u ** 8))}){look}}}")
+        back = 100 * (FALL + 1) / cycle
+        frames.append(f"{back:.3f}%{{transform:rotate(0deg) scale(1,1);opacity:0}}")
+        frames.append(f"{back + 100 * 2.5 / cycle:.3f}%,100%{{transform:rotate(0deg) scale(1,1);opacity:1}}")
+        out.append(f".c{n}{{animation:f{n} {cycle}s linear infinite}}@keyframes f{n}{{{''.join(frames)}}}")
+    return "".join(out)
+
+
+def chart(rng, shift):
+    """The year of contributions, bent round the hole. Far squares are still; near ones are set up to fall."""
+    year = json.loads(DATA.read_text())
+    first = datetime.date.fromisoformat(year["from"])
+    lead = (first.weekday() + 1) % 7  # GitHub's weeks start on Sunday
+    left, half = -TOP_WEEKS * PITCH / 2, TILE / 2 - ROUND
+    still, near, words = {}, {}, []
+
+    def place(week, weekday):
+        band, column = (0, week) if week < TOP_WEEKS else (1, week - TOP_WEEKS)
+        top = BAND_GAP / 2 if band else -BAND_GAP / 2 - 7 * PITCH
+        return left + (column + 0.5) * PITCH, top + (weekday + 0.5) * PITCH
+
+    for day, level in enumerate(year["levels"]):
+        x, y = place(*divmod(day + lead, 7))
+        cx, cy = lens(x, y)
+        r = math.hypot(cx, cy)
+        if r >= CAPTURE:
+            still.setdefault(level, []).append(f"M{num(cx - half)} {num(cy - half)}h{num(2 * half)}v{num(2 * half)}h{num(-2 * half)}z")
+            continue
+        # Drawn in a frame turned so that the square lies on the x axis, with its edges bent the way the lens bends them.
+        cos, sin = cx / r, cy / r
+        def seen(px, py):
+            px, py = lens(px, py)
+            return px * cos + py * sin, py * cos - px * sin
+        corners = [(x - half, y - half), (x + half, y - half), (x + half, y + half), (x - half, y + half)]
+        d = "M{} {}".format(*map(num, seen(*corners[0])))
+        for (ax, ay), (bx, by) in zip(corners, corners[1:] + corners[:1]):
+            (px, py), (qx, qy), (mx, my) = seen(ax, ay), seen(bx, by), seen((ax + bx) / 2, (ay + by) / 2)
+            kx, ky = 2 * mx - (px + qx) / 2, 2 * my - (py + qy) / 2  # the curve's handle, placed so it passes through the bent midpoint
+            bend = math.hypot(kx - (px + qx) / 2, ky - (py + qy) / 2)
+            d += f"Q{num(kx)} {num(ky)} {num(qx)} {num(qy)}" if bend > 0.3 else f"L{num(qx)} {num(qy)}"
+        rest = next(n for n, (reach, _) in enumerate(REST) if r < reach)
+        near.setdefault(level, []).append(f'<g transform="rotate({num(math.degrees(math.atan2(cy, cx)))})"><path class="c{rest}" d="{d}z" '
+                                          f'style="animation-delay:{num(-rng.uniform(0, REST[rest][1]) - shift)}s"/></g>')
+
+    weeks = (len(year["levels"]) + lead + 6) // 7
+    for week in range(weeks):
+        monday = first + datetime.timedelta(days=7 * week - lead)
+        starts_band = week in (0, TOP_WEEKS)
+        if starts_band or monday.month != (monday - datetime.timedelta(days=7)).month:
+            if starts_band and (monday + datetime.timedelta(days=14)).month != monday.month:
+                continue  # no room before the next month's name
+            x, y = place(week, 0)
+            x, y = lens(x - TILE / 2, y - PITCH / 2 - 5 if week < TOP_WEEKS else y + 6.5 * PITCH + 11)
+            words.append(f'<text x="{num(x)}" y="{num(y)}">{monday.strftime("%b")}</text>')
+    for band in (0, TOP_WEEKS):
+        for weekday, name in ((1, "Mon"), (3, "Wed"), (5, "Fri")):
+            x, y = place(band, weekday)
+            words.append(f'<text x="{num(x - PITCH / 2 - 6)}" y="{num(y + 3.5)}" text-anchor="end">{name}</text>')
+    tiles = "".join(f'<g class="l{level}"><path d="{"".join(still.get(level, []))}"/>{"".join(near.get(level, []))}</g>' for level in "01234")
+    return f'<g class="chart">{tiles}{"".join(words)}</g>'
+
+
 def render(at_time=None):
     """The whole SVG. With `at_time`, a frozen frame from that many seconds in."""
     rng = random.Random(SEED)
     shift = at_time or 0
     sky = stars(random.Random(SEED + 1), shift)
+    year = chart(random.Random(SEED + 2), shift)
 
     def period(r):
         return ORBIT * r ** 1.5
@@ -108,10 +229,10 @@ def render(at_time=None):
     def ring_glow(name, inner, peak_colour, reach=1.0, strength=1.0):
         """A soft ring: dark inside `inner` (a fraction of the radius), brightest just outside it."""
         return (f'<radialGradient id="{name}"><stop offset="{num(inner - 0.02)}" stop-color="{peak_colour}" stop-opacity="0"/>'
-                f'<stop offset="{num(inner + 0.015)}" stop-color="#fff6e5" stop-opacity="{num(0.95 * strength)}"/>'
+                f'<stop offset="{num(inner + 0.015)}" stop-color="{HOT[0]}" stop-opacity="{num(0.95 * strength)}"/>'
                 f'<stop offset="{num(inner + (reach - inner) * 0.16)}" stop-color="{peak_colour}" stop-opacity="{num(0.72 * strength)}"/>'
-                f'<stop offset="{num(inner + (reach - inner) * 0.5)}" stop-color="#f07a1f" stop-opacity="{num(0.3 * strength)}"/>'
-                f'<stop offset="{num(reach)}" stop-color="#a3360b" stop-opacity="0"/></radialGradient>')
+                f'<stop offset="{num(inner + (reach - inner) * 0.5)}" stop-color="{HOT[3]}" stop-opacity="{num(0.3 * strength)}"/>'
+                f'<stop offset="{num(reach)}" stop-color="{HOT[4]}" stop-opacity="0"/></radialGradient>')
 
     gas = "".join(f'<stop offset="{num(k / (len(HOT) - 1))}" stop-color="{c}"/>' for k, c in enumerate(HOT))
     x0, y0 = -W / 2, -H / 2
@@ -123,19 +244,22 @@ def render(at_time=None):
         f'<clipPath id="up"><rect x="{x0}" y="{y0}" width="{W}" height="{H / 2 + 0.6}"/></clipPath>'
         f'<clipPath id="down"><rect x="{x0}" y="-0.6" width="{W}" height="{H / 2 + 0.6}"/></clipPath>'
         f'<linearGradient id="gas" gradientUnits="userSpaceOnUse" x1="{num(-OUTER * R)}" x2="{num(OUTER * R)}">{gas}</linearGradient>'
-        f'<radialGradient id="sky" r=".8"><stop offset="0" stop-color="#150d22"/><stop offset=".55" stop-color="#080712"/><stop offset="1" stop-color="{BACKGROUND}"/></radialGradient>'
-        '<radialGradient id="haze"><stop offset="0" stop-color="#ff9a3c" stop-opacity=".2"/><stop offset=".5" stop-color="#d9480f" stop-opacity=".08"/><stop offset="1" stop-color="#d9480f" stop-opacity="0"/></radialGradient>'
-        + ring_glow("flat", INNER / OUTER, "#ffc876")
-        + ring_glow("core", INNER / 2.7, "#ffe3ad")
-        + ring_glow("arc", 1.03 / 2.0, "#ffd08a")
-        + ring_glow("low", 1.03 / 1.4, "#ffb65c", strength=0.6)
-        + '<radialGradient id="near"><stop offset="0" stop-color="#fff3d6" stop-opacity=".5"/><stop offset="1" stop-color="#ffb65c" stop-opacity="0"/></radialGradient>'
+        f'<radialGradient id="sky" r=".8"><stop offset="0" stop-color="{SKY}"/><stop offset=".55" stop-color="#080712"/><stop offset="1" stop-color="{BACKGROUND}"/></radialGradient>'
+        f'<radialGradient id="haze"><stop offset="0" stop-color="{HOT[2]}" stop-opacity=".2"/><stop offset=".5" stop-color="{HOT[3]}" stop-opacity=".08"/><stop offset="1" stop-color="{HOT[3]}" stop-opacity="0"/></radialGradient>'
+        + ring_glow("flat", INNER / OUTER, HOT[2])
+        + ring_glow("core", INNER / 2.7, HOT[1])
+        + ring_glow("arc", 1.03 / 2.0, HOT[1])
+        + ring_glow("low", 1.03 / 1.4, HOT[2], strength=0.6)
+        + f'<radialGradient id="near"><stop offset="0" stop-color="{HOT[0]}" stop-opacity=".5"/><stop offset="1" stop-color="{HOT[2]}" stop-opacity="0"/></radialGradient>'
         '<radialGradient id="far"><stop offset="0" stop-color="#03040a" stop-opacity=".5"/><stop offset="1" stop-color="#03040a" stop-opacity="0"/></radialGradient>'
     )
     style = (
         "ellipse[pathLength]{fill:none;stroke:url(#gas);stroke-linecap:round;animation:orbit linear infinite}.b{stroke-linecap:butt}"
         "@keyframes orbit{to{stroke-dashoffset:100}}"
         ".sky{animation:sky linear infinite}@keyframes sky{to{transform:rotate(-360deg)}}"
+        f".chart path{{stroke-width:{2 * ROUND};stroke-linejoin:round}}.l0{{fill:#fff;stroke:#fff;opacity:.07}}"
+        + "".join(f".l{k + 1}{{fill:{c};stroke:{c}}}" for k, c in enumerate(GREENS))
+        + ".chart text{font:10px -apple-system,'Segoe UI',Helvetica,Arial,sans-serif;fill:#9198a1;fill-opacity:.85}" + falls() +
         ".tw{animation:tw 6s ease-in-out infinite}@keyframes tw{50%{opacity:.15}}"
         + (f"*{{animation-play-state:paused!important}}ellipse[pathLength]{{animation-delay:{-shift}s!important}}" if at_time is not None else "")
         + "@media (prefers-reduced-motion:reduce){*{animation:none!important}}"
@@ -149,8 +273,10 @@ def render(at_time=None):
         f'<g clip-path="url(#down)"><ellipse rx="{num(1.4 * R)}" ry="{num(1.4 * R * 0.985)}" fill="url(#low)"/>{"".join(under)}</g>'
         f'<circle r="{R}" fill="#000"/>'
         # The ring of light that grazes the hole.
-        f'<circle r="{num(R * 1.025)}" fill="none" stroke="#ffe9c7" stroke-width="3.2" stroke-opacity=".28"/>'
-        f'<circle r="{num(R * 1.02)}" fill="none" stroke="#fff6e5" stroke-width="1.1" stroke-opacity=".95"/>'
+        f'<circle r="{num(R * 1.025)}" fill="none" stroke="{HOT[1]}" stroke-width="3.2" stroke-opacity=".28"/>'
+        f'<circle r="{num(R * 1.02)}" fill="none" stroke="{HOT[0]}" stroke-width="1.1" stroke-opacity=".95"/>'
+        # The chart hangs behind the disk, but its squares fall in front of the hole and its halo.
+        f'{year}'
         f'<g clip-path="url(#disk)"><ellipse rx="{num(flat_rx)}" ry="{num(flat_ry)}" fill="url(#flat)"/>'
         f'<ellipse rx="{num(2.7 * R)}" ry="{num(2.7 * R * TILT)}" fill="url(#core)"/>'
         # Against the black of the hole the gas has nothing behind it to add to, so it gets a second coat there.
@@ -160,7 +286,8 @@ def render(at_time=None):
         f'{"".join(disk)}'
         f'<ellipse cx="{num(3.2 * R)}" rx="{num(2.6 * R)}" ry="{num(0.7 * R)}" fill="url(#far)"/></g>'
     )
-    label = "A black hole: a disk of glowing gas streams around a dark sphere, its light bent into a halo over the top"
+    label = ("A black hole: a disk of glowing gas streams around a dark sphere, its light bent into a halo over the top. "
+             "Behind it hangs a year of GitHub contributions, whose squares bend round the hole, break away and spiral in")
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{x0} {y0} {W} {H}" width="{W}" height="{H}" role="img" aria-label="{label}">'
             f'<title>{label}</title><style>{style}</style><defs>{defs}</defs><g clip-path="url(#card)">{body}</g></svg>\n')
 
@@ -169,7 +296,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", help="write the SVG here instead of assets/")
     ap.add_argument("--at", type=float, help="write a frozen frame from this many seconds in")
+    ap.add_argument("--fetch", action="store_true", help="refresh the saved year of contributions from GitHub first")
     args = ap.parse_args()
+    if args.fetch:
+        fetch()
 
     out = pathlib.Path(args.out) if args.out else pathlib.Path(__file__).resolve().parent.parent / "assets"
     out.mkdir(parents=True, exist_ok=True)
